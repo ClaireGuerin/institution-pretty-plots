@@ -1,5 +1,6 @@
 library(tidyverse)
 library(fs)
+library(patchwork)
 # library(readr)
 # library(stringr)
 # library(glue)
@@ -12,20 +13,31 @@ fit_pars = read_csv("fitness_parameters.txt", col_names = c("name","value"))
 
 
 # Read output files except phenotypes ====
-read_non_phenotype_output <- function(path2dir){
+make_tibble_from_file <- function(filename){
+  var_name <- str_match(filename, "(?<=_).*(?=\\.)")
+  var_tibble <- read_csv(filename, col_names = c(paste(var_name,"_mean", sep = ""), paste(var_name, "_variance", sep = "")))
+}
+
+read_non_phenotype_data <- function(path2dir){
   setwd(path2dir)
   # list output files of interest
   all_output_files <- path_file(dir_ls(my_dir, glob = "*out*"))
   sub_output_files <- all_output_files[all_output_files != "out_phenotypes.txt"]
   
-  # WARNING: below is unfinished business
-  variable_file <- output_files[5]
-  variable_name <- str_match(variable_file, "(?<=_).*(?=\\.)")
-  variable_tibble <- read_csv(variable_file, col_names = c(paste(variable_name,"_mean", sep = ""), paste(variable_name, "_variance", sep = "")))
+  # Make full tibble
+  my_tibble <- make_tibble_from_file(sub_output_files[1])
+  indexed_tibble <- 1:dim(my_tibble)[1] %>% 
+    bind_cols(my_tibble) %>%
+    rename(generation = ...1)
   
+  for(variable_file in sub_output_files[-1]){
+    indexed_tibble <- indexed_tibble %>% 
+      bind_cols(make_tibble_from_file(variable_file))
+  }
+  
+  return(indexed_tibble)
 }
 
-output_files <- path_file(dir_ls(my_dir, glob = "*out*"))
 
 # Read phenotype data ====
 read_phenotype_data <- function(path2file, method = 3){
@@ -69,27 +81,73 @@ read_phenotype_data <- function(path2file, method = 3){
   
 }
 
-# PLOT ====
-plot_phenotype <- function(phen_dat){
-  ggplot(data = phen_dat) +
-  geom_ribbon(mapping = aes(x = generation, ymin = phenotype1_mean - phenotype1_variance, ymax = phenotype1_mean + phenotype1_variance),
-              colour = "blue",
-              stat = "smooth") +
-  geom_point(mapping = aes(x = generation, y = phenotype1_mean), 
-            size = 0.1
-            ) +
-  theme_classic()
+# Plots ====
+plot_non_phen <- function(dat, var_name){
+  var_average <- paste(var_name, "_mean", sep = "")
+  var_variance <- paste(var_name, "_variance", sep = "")
+  p <- ggplot(dat) +
+    geom_ribbon(mapping = aes(x = generation,
+                              ymin = !!rlang::parse_expr(var_average) - !!rlang::parse_expr(var_variance),
+                              ymax = !!rlang::parse_expr(var_average) + !!rlang::parse_expr(var_variance)),
+                colour = "gray") +
+    geom_point(mapping = aes(x = generation, y = !!rlang::parse_expr(var_average)),
+               colour = "seagreen3") +
+    xlab("Time (number of generations)") +
+    ylab(str_to_sentence(var_name)) +
+    theme_classic()
+  
+  return(p)
 }
 
-plot_phenotype_smooth <- function(phendat){
-  ggplot(data = phendat, aes(x = generation, y = phenotype1_mean)) +
-  geom_smooth() +
+plot_phenotype <- function(phen_dat, phen_index){
+  pheno_average <- paste("phenotype", phen_index, "_mean", sep = "")
+  pheno_variance <- paste("phenotype", phen_index, "_variance", sep = "")
+  
+  p <- ggplot(data = phen_dat) +
+    geom_ribbon(mapping = aes(x = generation, ymin = !!rlang::parse_expr(pheno_average) - !!rlang::parse_expr(pheno_variance), ymax = !!rlang::parse_expr(pheno_average) + !!rlang::parse_expr(pheno_variance)),
+              colour = "gray"
+              ) +
+    geom_point(mapping = aes(x = generation, y = !!rlang::parse_expr(pheno_average)), 
+            size = 0.1,
+            colour = "indianred3"
+            ) +
+    xlab("Time (number of generations)") +
+    ylab(paste("Phenotype", phen_index, sep = " ")) +
   theme_classic()
+  
+  return(p)
+}
+
+plot_phenotype_smooth <- function(phen_dat, phen_index){
+  phen_average <- paste("phenotype", phen_index, "_mean", sep = "")
+  
+  p <- ggplot(data = phen_dat, 
+              aes(x = generation, y = !!rlang::parse_expr(phen_average))) +
+  geom_smooth(colour = "coral1") +
+  theme_classic()
+  
+  return(p)
 }
 
 # Example ====
 my_dir = "/home/claire/Desktop/technofirstbatch/technology_alphaResources0.1betaTech0.1p0.1atech2.0btech1.0q0.1gamma0.01rb2.0"
-setwd(my_dir)
+# setwd(my_dir)
+non_pheno_data <- read_non_phenotype_data(my_dir)
 pheno_data <- read_phenotype_data("out_phenotypes.txt")
-plot_phenotype_smooth(pheno_data)
-plot_phenotype(pheno_data)
+
+plot_phenotype_smooth(pheno_data, 1)
+plot_phenotype(pheno_data, 1)
+
+## Plot phenotypes
+1:4 %>% 
+  map(plot_phenotype, phen_dat = pheno_data) %>%
+  wrap_plots()
+
+1:4 %>% 
+  map(plot_phenotype_smooth, phen_dat = pheno_data) %>%
+  wrap_plots()
+
+## Plot other variables
+c("consensus", "resources", "demography", "technology") %>% 
+  map(plot_non_phen, dat = non_pheno_data) %>%
+  wrap_plots()
