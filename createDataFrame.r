@@ -8,10 +8,6 @@ library(patchwork)
 # library(purrr)
 # library(ggplot2)
 
-
-fit_pars = read_csv("fitness_parameters.txt", col_names = c("name","value"))
-
-
 # Read output files except phenotypes ====
 make_tibble_from_file <- function(filename){
   var_name <- str_match(filename, "(?<=_).*(?=\\.)")
@@ -129,7 +125,33 @@ plot_phenotype_smooth <- function(phen_dat, phen_index){
   return(p)
 }
 
-# Example ====
+# Read data from multiple simulations ==== 
+# ... and store some kind of summary in a tibble
+ 
+# 1: loop over folders
+extract_mean <- function(file_path){
+  variable_file <- path_file(file_path)
+  variable_name <- str_match(variable_file,"(?<=_).*(?=\\.)")
+  mean_column <- paste(variable_name, "_mean", sep = "")
+  variance_column <- paste(variable_name, "_variance", sep = "")
+  variable_tibble <- read_csv(variable_file, col_names = c(mean_column, variance_column))
+  summarize(variable_tibble, mean = mean(!!rlang::parse_expr("demography_mean")))
+}
+extract_meta_data <- function(dir_path){
+  directory_list <- dir_ls(dir_path) %>% file_info()
+  file_path <- directory_list$path
+  file_type <- directory_list$type
+  
+  
+}
+directory_list <- dir_ls("/home/claire/Desktop/test-folder") %>% file_info()
+# 2: extract important information:
+## - mean value from generation x (user-defined) to end
+## - fitness parameter values
+fit_pars = read_csv("fitness_parameters.txt", col_names = c("name","value"))
+# 3: contour plot of mean values for each variable, according to different parameter values (user-defined)
+
+# Example: single simulation ====
 my_dir = "/home/claire/Desktop/technofirstbatch/technology_alphaResources0.1betaTech0.1p0.1atech2.0btech1.0q0.1gamma0.01rb2.0"
 # setwd(my_dir)
 non_pheno_data <- read_non_phenotype_data(my_dir)
@@ -151,3 +173,5 @@ plot_phenotype(pheno_data, 1)
 c("consensus", "resources", "demography", "technology") %>% 
   map(plot_non_phen, dat = non_pheno_data) %>%
   wrap_plots()
+
+# Example: multiple simulations ====
