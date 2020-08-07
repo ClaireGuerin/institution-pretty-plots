@@ -158,7 +158,7 @@ extract_meta_data <- function(dir_path = "."){
   non_phenotype_output_files <- output_files_list[output_files_list != "out_phenotypes.txt"]
   non_phen_summary =  map_dfr(non_phenotype_output_files, extract_global_mean_and_variance)
   
-  # Add phenotype summary
+  # !!!TO-DO: Add phenotype summary
   
   return(non_phen_summary)
   
