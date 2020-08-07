@@ -129,22 +129,41 @@ plot_phenotype_smooth <- function(phen_dat, phen_index){
 # ... and store some kind of summary in a tibble
  
 # 1: loop over folders
-extract_mean <- function(file_path){
+extract_global_mean_and_variance <- function(file_path, is_phen = FALSE){
   variable_file <- path_file(file_path)
   variable_name <- str_match(variable_file,"(?<=_).*(?=\\.)")
-  mean_column <- paste(variable_name, "_mean", sep = "")
-  variance_column <- paste(variable_name, "_variance", sep = "")
-  variable_tibble <- read_csv(variable_file, col_names = c(mean_column, variance_column))
-  summarize(variable_tibble, mean = mean(!!rlang::parse_expr("demography_mean")))
+  
+  if (is_phen) {
+    
+  } else {
+    mean_column <- paste(variable_name, "_mean", sep = "")
+    variance_column <- paste(variable_name, "_variance", sep = "")
+    variable_tibble <- read_csv(variable_file, col_names = c(mean_column, variance_column))
+    m <- summarize(variable_tibble, mean = mean(!!rlang::parse_expr(mean_column)))
+    v <- summarize(variable_tibble, var = mean(!!rlang::parse_expr(variance_column)))
+  }
+  
+  return(bind_cols(var_name = variable_name[,1], m, v))
 }
-extract_meta_data <- function(dir_path){
+
+extract_meta_data <- function(dir_path = "."){
   directory_list <- dir_ls(dir_path) %>% file_info()
   file_path <- directory_list$path
   file_type <- directory_list$type
   
+  files_list <- file_path[file_type == 'file']
+  output_files_list <- files_list[str_detect(files_list,"out*")]
+  
+  # Collect summaries of non-phenotypic data
+  non_phenotype_output_files <- output_files_list[output_files_list != "out_phenotypes.txt"]
+  non_phen_summary =  map_dfr(non_phenotype_output_files, extract_global_mean_and_variance)
+  
+  # Add phenotype summary
+  
+  return(non_phen_summary)
   
 }
-directory_list <- dir_ls("/home/claire/Desktop/test-folder") %>% file_info()
+
 # 2: extract important information:
 ## - mean value from generation x (user-defined) to end
 ## - fitness parameter values
@@ -175,3 +194,5 @@ c("consensus", "resources", "demography", "technology") %>%
   wrap_plots()
 
 # Example: multiple simulations ====
+
+extract_mean("out_demography.txt")
