@@ -101,15 +101,15 @@ plot_phenotype <- function(phen_dat, phen_index){
   
   p <- ggplot(data = phen_dat) +
     geom_ribbon(mapping = aes(x = generation, ymin = !!rlang::parse_expr(pheno_average) - !!rlang::parse_expr(pheno_variance), ymax = !!rlang::parse_expr(pheno_average) + !!rlang::parse_expr(pheno_variance)),
-              colour = "gray"
-              ) +
+                colour = "gray"
+    ) +
     geom_point(mapping = aes(x = generation, y = !!rlang::parse_expr(pheno_average)), 
-            size = 0.1,
-            colour = "indianred3"
-            ) +
+               size = 0.1,
+               colour = "indianred3"
+    ) +
     xlab("Time (number of generations)") +
     ylab(paste("Phenotype", phen_index, sep = " ")) +
-  theme_classic()
+    theme_classic()
   
   return(p)
 }
@@ -119,32 +119,71 @@ plot_phenotype_smooth <- function(phen_dat, phen_index){
   
   p <- ggplot(data = phen_dat, 
               aes(x = generation, y = !!rlang::parse_expr(phen_average))) +
-  geom_smooth(colour = "coral1") +
-  theme_classic()
+    geom_smooth(colour = "coral1") +
+    theme_classic()
   
   return(p)
 }
 
 # Read data from multiple simulations ==== 
 # ... and store some kind of summary in a tibble
- 
+
 # 1: loop over folders
 extract_global_mean_and_variance <- function(file_path, is_phen = FALSE){
   variable_file <- path_file(file_path)
   variable_name <- str_match(variable_file,"(?<=_).*(?=\\.)")
   
+  # mean # name
+  # function(x) mean(x) # lambda simple
+  # function(x) { mean(sqrt(x)) } # lambda complexe
+  # ~ mean(.x) # formula
+  
   if (is_phen) {
+    phen_data <- read_phenotype_data(file_path, 3)
+    
+    m <- phen_data %>%
+      summarize(across(ends_with("mean"), mean)) %>% 
+      pivot_longer(cols = colnames(.), names_to = "var_name", values_to = "mean") %>% 
+      mutate(var_name = str_remove(var_name, "_mean"))
+    v <- phen_data %>%
+      summarize(across(ends_with("variance"), ~ mean(sqrt(.x)))) %>% 
+      pivot_longer(cols = colnames(.), names_to = "var_name", values_to = "std") %>% 
+      mutate(var_name = str_remove(var_name, "_variance"))
+    data_set <- left_join(m, v)
     
   } else {
     mean_column <- paste(variable_name, "_mean", sep = "")
     variance_column <- paste(variable_name, "_variance", sep = "")
     variable_tibble <- read_csv(variable_file, col_names = c(mean_column, variance_column))
     m <- summarize(variable_tibble, mean = mean(!!rlang::parse_expr(mean_column)))
-    v <- summarize(variable_tibble, var = mean(!!rlang::parse_expr(variance_column)))
+    v <- summarize(variable_tibble, var = mean(sqrt(!!rlang::parse_expr(variance_column))))
   }
+  data_set <- bind_cols(var_name = variable_name[,1], m, v)
   
-  return(bind_cols(var_name = variable_name[,1], m, v))
+  #return(bind_cols(var_name = variable_name[,1], m, v))
+  return(data_set)
 }
+
+### Raph
+
+phen_data <- read_phenotype_data("out_phenotypes.txt", 3)
+phen_data %>% head
+
+phen_data %>%
+  pivot_longer(cols = colnames(.)[-1]) %>%
+  mutate(
+    var_type = str_remove(name, "^.*_"),
+    name = str_remove(name, "_.*$")
+  ) %>%
+  mutate(value = ifelse(var_type == "variance", sqrt(value), value)) %>%
+  group_by(name, var_type) %>%
+  summarize(mean = mean(value)) %>%
+  ungroup() %>%
+  pivot_wider(names_from = "var_type", values_from = "mean")
+
+###
+
+extract_global_mean_and_variance("out_phenotypes.txt", TRUE)
 
 extract_meta_data <- function(dir_path = "."){
   directory_list <- dir_ls(dir_path) %>% file_info()
@@ -158,7 +197,9 @@ extract_meta_data <- function(dir_path = "."){
   non_phenotype_output_files <- output_files_list[output_files_list != "out_phenotypes.txt"]
   non_phen_summary =  map_dfr(non_phenotype_output_files, extract_global_mean_and_variance)
   
-  # !!!TO-DO: Add phenotype summary
+  # Add phenotype summary
+  phenotype_output_file <- "out_phenotypes.txt"
+  phenotype_tibble <- read_phenotype_data(phenotype_output_file)
   
   return(non_phen_summary)
   
@@ -196,3 +237,4 @@ c("consensus", "resources", "demography", "technology") %>%
 # Example: multiple simulations ====
 
 extract_mean("out_demography.txt")
+extract_meta_data()
