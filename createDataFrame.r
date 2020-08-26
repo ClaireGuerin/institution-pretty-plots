@@ -1,6 +1,7 @@
 library(tidyverse)
 library(fs)
 library(patchwork)
+library(GGally)
 # library(readr)
 # library(stringr)
 # library(glue)
@@ -128,10 +129,39 @@ plot_phenotype_smooth <- function(phen_dat, phen_index){
 # Read data from multiple simulations ==== 
 # ... and store some kind of summary in a tibble
 
+reorganize_phenotype_summary <- function(phen_dat){
+  summary <- phen_data %>%
+    pivot_longer(cols = colnames(.)[-1], names_to = "var_name") %>% 
+    # organize by column names (except generation number)
+    mutate(
+      var_type = str_remove(var_name, "^.*_"),
+      var_name = str_remove(var_name, "_.*$")
+    ) %>% 
+    # create new column "var_type" that indicates mean or variance, and remove the _mean or _variance indication in "name" column
+    mutate(value = ifelse(var_type == "variance", sqrt(value), value)) %>% 
+    # apply square root to value if var_type is variance
+    mutate(var_type = if_else(var_type == "variance", "std", var_type)) %>%
+    group_by(var_name, var_type) %>% 
+    # group by both variable name and type, thus creating 8 groups (if there are 4 phenotypes accounted for)
+    summarize(mean = mean(value)) %>% 
+    # for each group, calculate the mean value
+    ungroup() %>%
+    pivot_wider(names_from = "var_type", values_from = "mean") 
+  # re-organize data frame so as to have one row by phenotype, and average value for phen mean and variance in 2 separate columns
+  
+  return(summary)
+}
+
+### example
+setwd("/home/claire/Desktop/technofirstbatch/technology_alphaResources0.1betaTech0.1p0.1atech2.0btech1.0q0.1gamma0.01rb2.0")
+phen_data <- read_phenotype_data("out_phenotypes.txt", 3)
+phen_data %>% head
+reorganize_phenotype_summary(phen_data)
+###
+
 # 1: loop over folders
 extract_global_mean_and_variance <- function(file_path, is_phen = FALSE){
-  variable_file <- path_file(file_path)
-  variable_name <- str_match(variable_file,"(?<=_).*(?=\\.)")
+  variable_name <- str_match(file_path,"(?<=/out_).*(?=\\.)")
   
   # mean # name
   # function(x) mean(x) # lambda simple
@@ -140,76 +170,157 @@ extract_global_mean_and_variance <- function(file_path, is_phen = FALSE){
   
   if (is_phen) {
     phen_data <- read_phenotype_data(file_path, 3)
-    
-    m <- phen_data %>%
-      summarize(across(ends_with("mean"), mean)) %>% 
-      pivot_longer(cols = colnames(.), names_to = "var_name", values_to = "mean") %>% 
-      mutate(var_name = str_remove(var_name, "_mean"))
-    v <- phen_data %>%
-      summarize(across(ends_with("variance"), ~ mean(sqrt(.x)))) %>% 
-      pivot_longer(cols = colnames(.), names_to = "var_name", values_to = "std") %>% 
-      mutate(var_name = str_remove(var_name, "_variance"))
-    data_set <- left_join(m, v)
+    data_summary <- reorganize_phenotype_summary(phen_data)
     
   } else {
     mean_column <- paste(variable_name, "_mean", sep = "")
     variance_column <- paste(variable_name, "_variance", sep = "")
-    variable_tibble <- read_csv(variable_file, col_names = c(mean_column, variance_column))
+    variable_tibble <- read_csv(file_path, col_names = c(mean_column, variance_column))
     m <- summarize(variable_tibble, mean = mean(!!rlang::parse_expr(mean_column)))
-    v <- summarize(variable_tibble, var = mean(sqrt(!!rlang::parse_expr(variance_column))))
+    v <- summarize(variable_tibble, std = mean(sqrt(!!rlang::parse_expr(variance_column))))
+    data_summary <- bind_cols(var_name = variable_name[,1], m, v)
   }
-  data_set <- bind_cols(var_name = variable_name[,1], m, v)
   
-  #return(bind_cols(var_name = variable_name[,1], m, v))
-  return(data_set)
+  return(data_summary)
 }
-
-### Raph
-
-phen_data <- read_phenotype_data("out_phenotypes.txt", 3)
-phen_data %>% head
-
-phen_data %>%
-  pivot_longer(cols = colnames(.)[-1]) %>%
-  mutate(
-    var_type = str_remove(name, "^.*_"),
-    name = str_remove(name, "_.*$")
-  ) %>%
-  mutate(value = ifelse(var_type == "variance", sqrt(value), value)) %>%
-  group_by(name, var_type) %>%
-  summarize(mean = mean(value)) %>%
-  ungroup() %>%
-  pivot_wider(names_from = "var_type", values_from = "mean")
-
-###
 
 extract_global_mean_and_variance("out_phenotypes.txt", TRUE)
+test_demography <- extract_global_mean_and_variance("out_demography.txt")
+extract_global_mean_and_variance(output_files_list[1])
+
 
 extract_meta_data <- function(dir_path = "."){
-  directory_list <- dir_ls(dir_path) %>% file_info()
-  file_path <- directory_list$path
-  file_type <- directory_list$type
-  
-  files_list <- file_path[file_type == 'file']
-  output_files_list <- files_list[str_detect(files_list,"out*")]
+  files_list <- dir_ls(dir_path, type = "file")
+  output_files_list <- files_list[str_detect(files_list,"(?<=/)out_(?!phenotypes)")]
   
   # Collect summaries of non-phenotypic data
-  non_phenotype_output_files <- output_files_list[output_files_list != "out_phenotypes.txt"]
-  non_phen_summary =  map_dfr(non_phenotype_output_files, extract_global_mean_and_variance)
+  global_summary <- output_files_list %>%
+    map_dfr(extract_global_mean_and_variance) %>%
+    bind_rows(extract_global_mean_and_variance(files_list[str_detect(files_list,"(?<=/)out_phenotypes.txt")], TRUE))
   
   # Add phenotype summary
-  phenotype_output_file <- "out_phenotypes.txt"
-  phenotype_tibble <- read_phenotype_data(phenotype_output_file)
+  #phenotype_output_file <- "out_phenotypes.txt"
+  #phenotype_tibble <- extract_global_mean_and_variance(phenotype_output_file)
   
-  return(non_phen_summary)
+  # Join
+  
+  return(global_summary)
   
 }
+
+extract_meta_data(".") 
+setwd("~")
+my_dir = "/home/claire/Desktop/technofirstbatch/technology_alphaResources0.1betaTech0.1p0.1atech2.0btech1.0q0.1gamma0.01rb2.0"
+extract_meta_data(my_dir)
 
 # 2: extract important information:
 ## - mean value from generation x (user-defined) to end
 ## - fitness parameter values
-fit_pars = read_csv("fitness_parameters.txt", col_names = c("name","value"))
-# 3: contour plot of mean values for each variable, according to different parameter values (user-defined)
+
+gather_pars_and_output_in_single_row <- function(path_to_sim){
+  output_data <- extract_meta_data(path_to_sim) %>%
+    pivot_longer(cols = c(mean, std), names_to = "val_type") %>%
+    mutate(var_name = paste(var_name, "_", val_type, sep = "")) %>%
+    select(-val_type) %>% 
+    pivot_wider(names_from = var_name, values_from = value)
+  
+  input_data <- read_csv(paste(path_to_sim,"fitness_parameters.txt", sep = "/"), col_names = c("par_name","par_val")) %>% 
+    pivot_wider(names_from = par_name, values_from = par_val)
+  
+  return(bind_cols(input_data, output_data))
+}
+
+gather_pars_and_output_in_single_row(my_dir)
+
+setwd("~")
+my_dir = "/home/claire/Desktop/technofirstbatch/technology_alphaResources0.1betaTech0.1p0.1atech2.0btech1.0q0.1gamma0.01rb2.0"
+gather_pars_and_output_in_single_row(my_dir)
+extract_meta_data(my_dir)
+
+# list all sim folders
+collect_all_simulations_data <- function(path_to_all_dirs){
+  dir_ls(path_to_all_dirs, type = "directory") %>%
+    map_dfr(gather_pars_and_output_in_single_row)
+}
+
+#==== Contour plots ====
+# contour plot of mean values for each variable, according to different parameter values (user-defined)
+
+data_set <- collect_all_simulations_data("/home/claire/Desktop/technofirstbatch")
+
+fitness_parameters <- colnames(data_set)[!str_detect(colnames(data_set),"_")]
+par_comb <- tibble(par = fitness_parameters) %>% 
+  expand(x = par, y = par) %>% 
+  filter(x < y)
+
+par_order <- par_comb %>% count(x)
+slice(par_comb, par_order$x[which.max(par_order$n)])
+first_row <- 
+  par_comb[which(par_comb$x == par_order$x[which.max(par_order$n)]),]
+
+named_vector_aes <- first_row[1,] %>% 
+  bind_cols(z = "resources_mean")  %>%
+  pivot_longer(cols = c(x,y,z)) %>%
+  deframe()
+
+
+ggplot(data_set, aes(x = !!rlang::parse_expr(named_vector_aes["x"]), y = !!rlang::parse_expr(named_vector_aes["y"]), z = !!rlang::parse_expr(named_vector_aes["z"]))) + 
+  geom_contour_filled() +
+  theme_classic()
+
+ggplot(data_set, aes(x = atech, y = alphaResources, z = resources_mean)) + 
+  geom_contour_filled() +
+  theme_classic()
+
+npars <- as.numeric(tally(par_comb))
+1:floor(sqrt(npars)) %>% rev
+
+for(i in 1:floor(sqrt(npars))) {
+  print(c(i, as.numeric(npars) / i))
+}
+
+data_set %>%
+  select(-matches("_")) %>%
+  ggally_denstrip(mapping = aes(x = q, y = p, z = resources_mean))
+  
+ggpairs()
+ggplot(data_set, aes(x = q, y = p, z = resources_mean)) + 
+  geom_density_2d_filled(alpha = 0.5) +
+  theme_classic()
+
+ggplot(data_set, aes(x = q, y = p, z = resources_mean)) + 
+  geom_contour_filled() +
+  theme_classic()
+
+#==== example from GGally ====
+# Small function to display plots only if it's interactive
+p_ <- GGally::print_if_interactive
+
+data(tips, package = "reshape")
+p_(ggally_facetdensity(tips, mapping = ggplot2::aes(x = total_bill, y = sex)))
+p_(ggally_facetdensity(tips,mapping = ggplot2::aes_string(y = "total_bill", x = "sex", color = "sex")))
+###
+
+# Desired format:
+# Each row is one simulation, each column a parameter value or mean / variance variable
+
+file_path <- "out_demography.txt"
+variable_file <- path_file(file_path)
+variable_name <- str_match(variable_file,"(?<=_).*(?=\\.)")
+
+# mean # name
+# function(x) mean(x) # lambda simple
+# function(x) { mean(sqrt(x)) } # lambda complexe
+# ~ mean(.x) # formula
+
+mean_column <- paste(variable_name, "_mean", sep = "")
+variance_column <- paste(variable_name, "_variance", sep = "")
+variable_tibble <- read_csv(variable_file, col_names = c(mean_column, variance_column))
+m <- summarize(variable_tibble, mean = mean(!!rlang::parse_expr(mean_column)))
+v <- summarize(variable_tibble, std = mean(sqrt(!!rlang::parse_expr(variance_column))))
+data_summary <- bind_cols(var_name = variable_name[,1], m, v)
+
+
 
 # Example: single simulation ====
 my_dir = "/home/claire/Desktop/technofirstbatch/technology_alphaResources0.1betaTech0.1p0.1atech2.0btech1.0q0.1gamma0.01rb2.0"
