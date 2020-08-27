@@ -165,7 +165,7 @@ extract_global_mean_and_variance <- function(file_path, is_phen = FALSE){
   
   # mean # name
   # function(x) mean(x) # lambda simple
-  # function(x) { mean(sqrt(x)) } # lambda complexe
+  # function(x) { mean(sqrt(x)) } # lambda complex
   # ~ mean(.x) # formula
   
   if (is_phen) {
@@ -243,12 +243,167 @@ collect_all_simulations_data <- function(path_to_all_dirs){
     map_dfr(gather_pars_and_output_in_single_row)
 }
 
+#==== Get median values for all parameters ====
+
+data_set <- collect_all_simulations_data("/home/claire/Desktop/technofirstbatch")
+fitness_parameters <- colnames(data_set)[!str_detect(colnames(data_set),"_")]
+fixed_par_values <- data_set %>%
+  summarise_at(fitness_parameters, median, na.rm = TRUE)
+
+#==== Get sub-tibble for 2 varying pars, all others fixed ====
+
+#==== Filtering (Raph's code) ====
+# Fake data frame
+# data <- expand_grid(a = c(1, 2, 3), b = c(1, 2, 3), c = c(1, 2, 3), d = c(1, 2, 3))
+# data$z <- rnorm(nrow(data))
+
+# Filter specific values using a single operator
+filter2 <- function(data, filters, operator = "==") {
+  
+  # data: a data frame
+  # filters: a named vector or list of parameter values, where the names are
+  # the names of the parameters to filter
+  # operator: optional logical operator to use, defaults to equal
+  
+  # Create a string containing the filters to apply
+  string <- map2(names(filters), filters, ~ paste(.x, operator, .y))
+  ## creates a vector of strings "filter == value"
+  string <- reduce(string, paste, sep = ", ")
+  ## reduces the vector into a single string
+  string <- paste0("filter(data, ", string, ")")
+  ## creates a string with the function to be applied: "filter(data, fltr1 == x, fltr2 == y, ...)"
+  
+  # Apply the filters by parsing the string
+  eval(parse_expr(string))
+  
+}
+
+filter2(data, filters = c(a = 1, b = 1))
+filter2(data, filters = list(a = 1, b = 1)) # also works
+
+# Filter with any rule, more flexible
+filter3 <- function(data, filters) {
+  
+  # data: a data frame
+  # filters: a vector or list of strings defining each filter to apply (will
+  # be parsed)
+  
+  # Create a string containing the filters to apply
+  string <- reduce(filters, paste, sep = ", ")
+  string <- paste0("filter(data, ", string, ")")
+  
+  # Apply the filters by parsing the string
+  eval(parse_expr(string))
+  
+}
+
+filter3(data, filters = list("a == 1", "b == 1"))
+filter3(data, filters = c("a == 1", "b == 1"))
+
+# I suggest to do the plotting outside, the filtering is a rather self-contained
+# task
+
+#==== Raph's stuff (could be useful later on) ====
+
+my_contour <- function(data_set, filters, variable = "resources_mean") {
+
+  data_set %>%
+    filter(alphaResources == 0.1, betaTech == 0.1, atech == 2, btech == 1, gamma == 0.01, rb == 2) %>%
+    ggplot(aes(x = p, y = q, fill = get(variable))) +
+    geom_tile() +
+    labs(fill = variable)
+    
+}
+
+my_contour(data_set, "resources_std")
+
+###
+
+data_plots <- data_set %>%
+  group_by(alphaResources, betaTech, atech, btech, gamma, rb) %>%
+  nest() %>% 
+  mutate(plot = map(data, function(df) {
+    
+    ggplot(df, aes(x = p, y = q, fill = resources_mean)) +
+      geom_tile()
+    
+  }))
+
+###
+
+### 
+# e.g. for p and q
+fitness_parameters <- colnames(data_set)[!str_detect(colnames(data_set),"_")]
+fixed_par_values <- data_set[fitness_parameters][1,]
+
+
+contour_parameter_pair <- function(dataset, filter_full_list, x_par, y_par, response_variable){
+  filter_list <- filter_full_list %>%
+    select(-all_of(c(x_par, y_par)))
+  dataset %>%
+    filter2(filters = unlist(filter_list)) %>%
+    ggplot(aes(x = eval(parse_expr(x_par)), y = eval(parse_expr(y_par)), fill = eval(parse_expr(response_variable)))) +
+    geom_tile() +
+    labs(x = NULL, y = NULL, fill = NULL) +
+    theme(legend.position = "none")
+}
+
+library(patchwork)
+
+par_comb <- tibble(par = fitness_parameters) %>% 
+  expand(x = par, y = par) %>% 
+  filter(x < y)
+
+save_graphs <- map2(par_comb$x, par_comb$y, ~ contour_parameter_pair(data_set, fixed_par_values, x_par = .x, y_par = .y, response_variable = "resources_mean"))
+
+area_string <- function(top_placement, left_placement) {
+  paste0("area(",top_placement, ",", left_placement, ")")
+}
+
+placements <- tibble(tops = count(par_comb, x)$n, lefts = count(par_comb, y)$n) %>% 
+  expand(x = tops, y = lefts) %>% 
+  filter(x <= y)
+
+single_areas_string <- map2(placements$x, placements$y, ~ area_string(top_placement = .x + 1, left_placement = .y)) %>%
+  reduce(paste, sep = ", ")
+
+first_row <- count(par_comb, x)$x
+last_column <- count(par_comb, y)$y
+
+top_labels <- first_row %>%
+  map(~ grid::textGrob(.x)) %>%
+  map(~ wrap_elements(.x))
+
+right_labels <- last_column %>%
+  map(~ grid::textGrob(.x)) %>%
+  map(~ wrap_elements(.x))
+
+all_graphs <- c(top_labels, save_graphs, right_labels)
+
+patch_layout <- c(c(area(1,1),
+                    area(1,2),
+                    area(1,3),
+                    area(1,4),
+                    area(1,5),
+                    area(1,6),
+                    area(1,7)), 
+                  eval(parse_expr(paste0("c(",single_areas_string,")"))), 
+                  c(area(2,8),
+                    area(3,8),
+                    area(4,8),
+                    area(5,8),
+                    area(6,8),
+                    area(7,8),
+                    area(8,8)))
+
+plot(patch_layout)
+
+wrap_plots(all_graphs) +
+  plot_layout(design = patch_layout)
+
 #==== Contour plots ====
 # contour plot of mean values for each variable, according to different parameter values (user-defined)
 
-data_set <- collect_all_simulations_data("/home/claire/Desktop/technofirstbatch")
-
-fitness_parameters <- colnames(data_set)[!str_detect(colnames(data_set),"_")]
 par_comb <- tibble(par = fitness_parameters) %>% 
   expand(x = par, y = par) %>% 
   filter(x < y)
