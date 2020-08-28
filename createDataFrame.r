@@ -332,10 +332,8 @@ data_plots <- data_set %>%
 
 ###
 
-#==== Contour Plots Patworks by Variable ====
+#==== Contour Plots Patchworks by Variable ====
 # e.g. for p and q
-fitness_parameters <- colnames(data_set)[!str_detect(colnames(data_set),"_")]
-fixed_par_values <- data_set[fitness_parameters][1,]
 
 contour_parameter_pair <- function(dataset, filter_full_list, x_par, y_par, response_variable){
   filter_list <- filter_full_list %>%
@@ -351,76 +349,93 @@ contour_parameter_pair <- function(dataset, filter_full_list, x_par, y_par, resp
     theme_classic()
 }
 
-
-
-par_comb <- tibble(par = fitness_parameters) %>% 
-  expand(x = par, y = par) %>% 
-  filter(x < y)
-
-save_graphs <- map2(par_comb$x, par_comb$y, ~ contour_parameter_pair(data_set, fixed_par_values, x_par = .x, y_par = .y, response_variable = "resources_mean") +
-                      theme(legend.position = "none"))
-
-wrap_plots(save_graphs)
-
-test_graph <- contour_parameter_pair(data_set, fixed_par_values, x_par = par_comb$x[1], y_par = par_comb$y[1], response_variable = "resources_mean")
-
-test_legend_ggplot <- test_graph %>%
-  cowplot::get_legend() %>% 
-  wrap_elements()
-
-test_legend_grob <- test_graph %>%
-  cowplot::get_legend()
-
 ## checking that the order of graphs is as expected:
-map2(par_comb$x, par_comb$y, ~ c(.x, .y))
+## map2(par_comb$x, par_comb$y, ~ c(.x, .y))
 
+# Function to write area instructions as string
 area_string <- function(top_placement, left_placement) {
   paste0("area(",top_placement, ",", left_placement, ")")
 }
 
-placements <- tibble(tops = count(par_comb, x)$n, lefts = count(par_comb, y)$n) %>% 
-  expand(x = tops, y = lefts) %>% 
-  filter(x <= y) %>%
-  rename(x = y, y = x)
+# prepare arguments for automation
+#fixed_par_values <- data_set[fitness_parameters][1,]
+parameter_list <- data_set %>%
+  colnames() %>%
+  str_subset(pattern = "_", negate = TRUE)
 
-single_areas_string <- map2(placements$x, placements$y, ~ area_string(top_placement = .x, left_placement = .y + 1)) %>%
-  reduce(paste, sep = ", ")
+fixed_pars <- tibble(1, 2, 3, 4, 5, 6, 7, 8) %>%
+  rename_with(~ parameter_list, c(1, 2, 3, 4, 5, 6, 7, 8))
 
-last_row <- count(par_comb, x)$x
-first_column <- count(par_comb, y)$y
+## Automatize
 
-bottom_labels <- first_row %>%
-  map(~ grid::textGrob(.x)) %>%
-  map(~ wrap_elements(.x))
-
-left_labels <- last_column %>%
-  map(~ grid::textGrob(.x)) %>%
-  map(~ wrap_elements(.x))
-
-all_graphs <- c(left_labels, save_graphs, bottom_labels, list(test_legend))
-
-patch_layout <- c(c(area(1,1),
-                    area(2,1),
-                    area(3,1),
-                    area(4,1),
-                    area(5,1),
-                    area(6,1),
-                    area(7,1)), 
-                  eval(parse_expr(paste0("c(",single_areas_string,")"))), 
-                  c(area(8,2),
-                    area(8,3),
-                    area(8,4),
-                    area(8,5),
-                    area(8,6),
-                    area(8,7),
-                    area(8,8)),
-                  area(2,7))
-
-
-plot(patch_layout)
-
-wrap_plots(all_graphs) +
-  plot_layout(design = patch_layout)
+contour_plot_patchwork <- function() {
+  # get all parameter names 
+  fitness_parameters <- names(fixed_pars)
+  # make combinations (without repetitions) of all parameters
+  par_comb <- tibble(par = fitness_parameters) %>% 
+    expand(x = par, y = par) %>% 
+    filter(x < y)
+  
+  # prepare each contour plot for each parameter combination
+  # NB: need to change response_variable so that it is an argument of the function
+  save_graphs <- map2(par_comb$x, par_comb$y, ~ contour_parameter_pair(data_set, fixed_pars, x_par = .x, y_par = .y, response_variable = "resources_mean") +
+                        theme(legend.position = "none"))
+  
+  # prepare global legend from dummy contour plot
+  # NB: need to change response_variable so that it is an argument of the function
+  global_legend <- contour_parameter_pair(data_set, fixed_pars, x_par = par_comb$x[1], y_par = par_comb$y[1], response_variable = "resources_mean")  %>%
+    cowplot::get_legend() %>% 
+    wrap_elements()
+  
+  # make a list of ordered placements on patchwork for each contour plot
+  placements <- tibble(tops = count(par_comb, x)$n, lefts = count(par_comb, y)$n) %>% 
+    expand(x = tops, y = lefts) %>% 
+    filter(x <= y) %>%
+    rename(x = y, y = x)
+  
+  # turn list into strings containing area function
+  all_areas_in_string <- map2(placements$x, placements$y, ~ area_string(top_placement = .x, left_placement = .y + 1)) %>%
+    reduce(paste, sep = ", ")
+  
+  # Collect the labels (left side and bottom)
+  last_row <- count(par_comb, x)$x
+  first_column <- count(par_comb, y)$y
+  
+  bottom_labels <- last_row %>%
+    map(~ grid::textGrob(.x)) %>%
+    map(~ wrap_elements(.x))
+  
+  left_labels <- first_column %>%
+    map(~ grid::textGrob(.x)) %>%
+    map(~ wrap_elements(.x))
+  
+  # collect labels, graphs and legend as a list of ggplot items
+  all_graphs <- c(left_labels, save_graphs, bottom_labels, list(test_legend))
+  
+  # prepare layout
+  # NB: the labels and legend areas need to be automatized
+  patch_layout <- c(c(area(1,1),
+                      area(2,1),
+                      area(3,1),
+                      area(4,1),
+                      area(5,1),
+                      area(6,1),
+                      area(7,1)), 
+                    eval(parse_expr(paste0("c(", all_areas_in_string,")"))), 
+                    c(area(8,2),
+                      area(8,3),
+                      area(8,4),
+                      area(8,5),
+                      area(8,6),
+                      area(8,7),
+                      area(8,8)),
+                    area(2,7))
+  
+  # plot contours in patchwork following layout
+  wrap_plots(all_graphs) +
+    plot_layout(design = patch_layout)
+  
+}
 
 #==== Contour plots ====
 # contour plot of mean values for each variable, according to different parameter values (user-defined)
