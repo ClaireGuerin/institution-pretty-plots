@@ -357,9 +357,19 @@ par_comb <- tibble(par = fitness_parameters) %>%
   expand(x = par, y = par) %>% 
   filter(x < y)
 
-save_graphs <- map2(par_comb$x, par_comb$y, ~ contour_parameter_pair(data_set, fixed_par_values, x_par = .x, y_par = .y, response_variable = "resources_mean"))
+save_graphs <- map2(par_comb$x, par_comb$y, ~ contour_parameter_pair(data_set, fixed_par_values, x_par = .x, y_par = .y, response_variable = "resources_mean") +
+                      theme(legend.position = "none"))
 
 wrap_plots(save_graphs)
+
+test_graph <- contour_parameter_pair(data_set, fixed_par_values, x_par = par_comb$x[1], y_par = par_comb$y[1], response_variable = "resources_mean")
+
+test_legend_ggplot <- test_graph %>%
+  cowplot::get_legend() %>% 
+  wrap_elements()
+
+test_legend_grob <- test_graph %>%
+  cowplot::get_legend()
 
 ## checking that the order of graphs is as expected:
 map2(par_comb$x, par_comb$y, ~ c(.x, .y))
@@ -387,7 +397,7 @@ left_labels <- last_column %>%
   map(~ grid::textGrob(.x)) %>%
   map(~ wrap_elements(.x))
 
-all_graphs <- c(left_labels, save_graphs, bottom_labels)
+all_graphs <- c(left_labels, save_graphs, bottom_labels, list(test_legend))
 
 patch_layout <- c(c(area(1,1),
                     area(2,1),
@@ -403,12 +413,14 @@ patch_layout <- c(c(area(1,1),
                     area(8,5),
                     area(8,6),
                     area(8,7),
-                    area(8,8)))
+                    area(8,8)),
+                  area(2,7))
+
 
 plot(patch_layout)
 
 wrap_plots(all_graphs) +
-  plot_layout(design = patch_layout, guides = "collect")
+  plot_layout(design = patch_layout)
 
 #==== Contour plots ====
 # contour plot of mean values for each variable, according to different parameter values (user-defined)
