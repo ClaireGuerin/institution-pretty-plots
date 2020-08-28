@@ -1,7 +1,8 @@
 library(tidyverse)
 library(fs)
 library(patchwork)
-library(GGally)
+library(rlang)
+# library(GGally)
 # library(readr)
 # library(stringr)
 # library(glue)
@@ -331,11 +332,10 @@ data_plots <- data_set %>%
 
 ###
 
-### 
+#==== Contour Plots Patworks by Variable ====
 # e.g. for p and q
 fitness_parameters <- colnames(data_set)[!str_detect(colnames(data_set),"_")]
 fixed_par_values <- data_set[fitness_parameters][1,]
-
 
 contour_parameter_pair <- function(dataset, filter_full_list, x_par, y_par, response_variable){
   filter_list <- filter_full_list %>%
@@ -344,11 +344,14 @@ contour_parameter_pair <- function(dataset, filter_full_list, x_par, y_par, resp
     filter2(filters = unlist(filter_list)) %>%
     ggplot(aes(x = eval(parse_expr(x_par)), y = eval(parse_expr(y_par)), fill = eval(parse_expr(response_variable)))) +
     geom_tile() +
-    labs(x = NULL, y = NULL, fill = NULL) +
-    theme(legend.position = "none")
+    # scale_fill_gradient(low = "#f7fbff", high = "#08306b") +
+    scale_fill_continuous(type = "viridis", limits = c(10, 110)) +
+    labs(x = NULL, y = NULL, fill = response_variable) +
+    #theme(legend.position = "none") +
+    theme_classic()
 }
 
-library(patchwork)
+
 
 par_comb <- tibble(par = fitness_parameters) %>% 
   expand(x = par, y = par) %>% 
@@ -356,50 +359,56 @@ par_comb <- tibble(par = fitness_parameters) %>%
 
 save_graphs <- map2(par_comb$x, par_comb$y, ~ contour_parameter_pair(data_set, fixed_par_values, x_par = .x, y_par = .y, response_variable = "resources_mean"))
 
+wrap_plots(save_graphs)
+
+## checking that the order of graphs is as expected:
+map2(par_comb$x, par_comb$y, ~ c(.x, .y))
+
 area_string <- function(top_placement, left_placement) {
   paste0("area(",top_placement, ",", left_placement, ")")
 }
 
 placements <- tibble(tops = count(par_comb, x)$n, lefts = count(par_comb, y)$n) %>% 
   expand(x = tops, y = lefts) %>% 
-  filter(x <= y)
+  filter(x <= y) %>%
+  rename(x = y, y = x)
 
-single_areas_string <- map2(placements$x, placements$y, ~ area_string(top_placement = .x + 1, left_placement = .y)) %>%
+single_areas_string <- map2(placements$x, placements$y, ~ area_string(top_placement = .x, left_placement = .y + 1)) %>%
   reduce(paste, sep = ", ")
 
-first_row <- count(par_comb, x)$x
-last_column <- count(par_comb, y)$y
+last_row <- count(par_comb, x)$x
+first_column <- count(par_comb, y)$y
 
-top_labels <- first_row %>%
+bottom_labels <- first_row %>%
   map(~ grid::textGrob(.x)) %>%
   map(~ wrap_elements(.x))
 
-right_labels <- last_column %>%
+left_labels <- last_column %>%
   map(~ grid::textGrob(.x)) %>%
   map(~ wrap_elements(.x))
 
-all_graphs <- c(top_labels, save_graphs, right_labels)
+all_graphs <- c(left_labels, save_graphs, bottom_labels)
 
 patch_layout <- c(c(area(1,1),
-                    area(1,2),
-                    area(1,3),
-                    area(1,4),
-                    area(1,5),
-                    area(1,6),
-                    area(1,7)), 
+                    area(2,1),
+                    area(3,1),
+                    area(4,1),
+                    area(5,1),
+                    area(6,1),
+                    area(7,1)), 
                   eval(parse_expr(paste0("c(",single_areas_string,")"))), 
-                  c(area(2,8),
-                    area(3,8),
-                    area(4,8),
-                    area(5,8),
-                    area(6,8),
-                    area(7,8),
+                  c(area(8,2),
+                    area(8,3),
+                    area(8,4),
+                    area(8,5),
+                    area(8,6),
+                    area(8,7),
                     area(8,8)))
 
 plot(patch_layout)
 
 wrap_plots(all_graphs) +
-  plot_layout(design = patch_layout)
+  plot_layout(design = patch_layout, guides = "collect")
 
 #==== Contour plots ====
 # contour plot of mean values for each variable, according to different parameter values (user-defined)
