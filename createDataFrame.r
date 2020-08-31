@@ -244,14 +244,11 @@ collect_all_simulations_data <- function(path_to_all_dirs){
     map_dfr(gather_pars_and_output_in_single_row)
 }
 
-#==== Get median values for all parameters ====
+#==== Get data from all simulations ====
 
 data_set <- collect_all_simulations_data("/home/claire/Desktop/technofirstbatch")
-fitness_parameters <- colnames(data_set)[!str_detect(colnames(data_set),"_")]
-fixed_par_values <- data_set %>%
-  summarise_at(fitness_parameters, median, na.rm = TRUE)
 
-#==== Get sub-tibble for 2 varying pars, all others fixed ====
+# Get sub-tibble for 2 varying pars, all others fixed
 
 #==== Filtering (Raph's code) ====
 # Fake data frame
@@ -395,12 +392,12 @@ contour_plot_patchwork <- function(dataset, fixpars) {
   
   # prepare each contour plot for each parameter combination
   # NB: need to change response_variable so that it is an argument of the function
-  save_graphs <- map2(par_comb$x, par_comb$y, ~ contour_parameter_pair(dataset, fixpars, x_par = .x, y_par = .y, response_variable = "resources_mean") +
+  save_graphs <- map2(par_comb$x, par_comb$y, ~ contour_parameter_pair(data_set, fixpars, x_par = .x, y_par = .y, response_variable = "resources_mean") +
                         theme(legend.position = "none"))
   
   # prepare global legend from dummy contour plot
   # NB: need to change response_variable so that it is an argument of the function
-  global_legend <- contour_parameter_pair(dataset, fixpars, x_par = par_comb$x[1], y_par = par_comb$y[1], response_variable = "resources_mean")  %>%
+  global_legend <- contour_parameter_pair(data_set, fixpars, x_par = par_comb$x[1], y_par = par_comb$y[1], response_variable = "resources_mean")  %>%
     cowplot::get_legend() %>% 
     wrap_elements()
   
@@ -422,14 +419,14 @@ contour_plot_patchwork <- function(dataset, fixpars) {
     reduce(paste, sep = ", ")
   
   # Collect the labels (left side and bottom)
-  last_row <- count(par_comb, x)$x
-  first_column <- count(par_comb, y)$y
+  last_row_lab <- count(par_comb, x)$x
+  first_column_lab <- count(par_comb, y)$y
   
-  bottom_labels <- last_row %>%
+  bottom_labels <- last_row_lab %>%
     map(~ grid::textGrob(.x)) %>%
     map(~ wrap_elements(.x))
   
-  left_labels <- first_column %>%
+  left_labels <- first_column_lab %>%
     map(~ grid::textGrob(.x)) %>%
     map(~ wrap_elements(.x))
   
@@ -438,16 +435,24 @@ contour_plot_patchwork <- function(dataset, fixpars) {
   
   # prepare layout
   # NB: the labels and legend areas need to be automatized
+  legend_shift <- round((last_row - 1) * sqrt(2) / 4)
   patch_layout <- c(eval(parse_expr(paste0("c(", left_labels_string,")"))), 
                     eval(parse_expr(paste0("c(", all_areas_in_string,")"))), 
                     eval(parse_expr(paste0("c(", bottom_labels_string,")"))),
-                    area(2,7))
+                    area(1 + legend_shift, last_row - legend_shift + 2))
   
   # plot contours in patchwork following layout
   wrap_plots(all_graphs) +
     plot_layout(design = patch_layout)
   
 }
+
+contour_plot_patchwork(dataset = data_set, fixpars = fixed_pars)
+
+
+### DEBUG
+
+###
 
 #==== Contour plots ====
 # contour plot of mean values for each variable, according to different parameter values (user-defined)
