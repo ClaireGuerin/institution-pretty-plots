@@ -363,14 +363,31 @@ parameter_list <- data_set %>%
   colnames() %>%
   str_subset(pattern = "_", negate = TRUE)
 
+# to implement fixed pars by hand:
 fixed_pars <- tibble(1, 2, 3, 4, 5, 6, 7, 8) %>%
   rename_with(~ parameter_list, c(1, 2, 3, 4, 5, 6, 7, 8))
 
+# to implement fixed pars automatically
+find_middle_value <- function(dat, colstr){
+  mean_par_value <- dat %>% 
+    summarize(mean = mean(!!parse_expr(colstr))) %>%
+    as.numeric()
+  middle_value <- dat %>% 
+    select(colstr) %>%
+    mutate(absval = abs(!!parse_expr(colstr) - mean_par_value)) %>%
+    filter(absval == min(absval)) %>%
+    distinct()
+  
+  return(middle_value[colstr])
+}
+
+fixed_pars <- map_dfc(parameter_list, ~ find_middle_value(dat = data_set, colstr = .x))
+
 ## Automatize
 
-contour_plot_patchwork <- function() {
+contour_plot_patchwork <- function(dataset, fixpars) {
   # get all parameter names 
-  fitness_parameters <- names(fixed_pars)
+  fitness_parameters <- names(fixpars)
   # make combinations (without repetitions) of all parameters
   par_comb <- tibble(par = fitness_parameters) %>% 
     expand(x = par, y = par) %>% 
@@ -378,12 +395,12 @@ contour_plot_patchwork <- function() {
   
   # prepare each contour plot for each parameter combination
   # NB: need to change response_variable so that it is an argument of the function
-  save_graphs <- map2(par_comb$x, par_comb$y, ~ contour_parameter_pair(data_set, fixed_pars, x_par = .x, y_par = .y, response_variable = "resources_mean") +
+  save_graphs <- map2(par_comb$x, par_comb$y, ~ contour_parameter_pair(dataset, fixpars, x_par = .x, y_par = .y, response_variable = "resources_mean") +
                         theme(legend.position = "none"))
   
   # prepare global legend from dummy contour plot
   # NB: need to change response_variable so that it is an argument of the function
-  global_legend <- contour_parameter_pair(data_set, fixed_pars, x_par = par_comb$x[1], y_par = par_comb$y[1], response_variable = "resources_mean")  %>%
+  global_legend <- contour_parameter_pair(dataset, fixpars, x_par = par_comb$x[1], y_par = par_comb$y[1], response_variable = "resources_mean")  %>%
     cowplot::get_legend() %>% 
     wrap_elements()
   
@@ -395,6 +412,13 @@ contour_plot_patchwork <- function() {
   
   # turn list into strings containing area function
   all_areas_in_string <- map2(placements$x, placements$y, ~ area_string(top_placement = .x, left_placement = .y + 1)) %>%
+    reduce(paste, sep = ", ")
+  # make string of all placement areas for left-hand labels
+  left_labels_string <- map(1:7, ~ area_string(top_placement = .x, left_placement = 1))  %>%
+    reduce(paste, sep = ", ")
+  # make string of all placement areas for left-hand labels
+  last_row <- max(placements) + 1
+  bottom_labels_string <- map(2:last_row, ~ area_string(top_placement = last_row, left_placement = .x)) %>%
     reduce(paste, sep = ", ")
   
   # Collect the labels (left side and bottom)
@@ -414,21 +438,9 @@ contour_plot_patchwork <- function() {
   
   # prepare layout
   # NB: the labels and legend areas need to be automatized
-  patch_layout <- c(c(area(1,1),
-                      area(2,1),
-                      area(3,1),
-                      area(4,1),
-                      area(5,1),
-                      area(6,1),
-                      area(7,1)), 
+  patch_layout <- c(eval(parse_expr(paste0("c(", left_labels_string,")"))), 
                     eval(parse_expr(paste0("c(", all_areas_in_string,")"))), 
-                    c(area(8,2),
-                      area(8,3),
-                      area(8,4),
-                      area(8,5),
-                      area(8,6),
-                      area(8,7),
-                      area(8,8)),
+                    eval(parse_expr(paste0("c(", bottom_labels_string,")"))),
                     area(2,7))
   
   # plot contours in patchwork following layout
