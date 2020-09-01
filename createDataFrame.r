@@ -370,7 +370,7 @@ find_middle_value <- function(dat, colstr){
     summarize(mean = mean(!!parse_expr(colstr))) %>%
     as.numeric()
   middle_value <- dat %>% 
-    select(colstr) %>%
+    select(all_of(colstr)) %>%
     mutate(absval = abs(!!parse_expr(colstr) - mean_par_value)) %>%
     filter(absval == min(absval)) %>%
     distinct()
@@ -411,7 +411,7 @@ contour_plot_patchwork <- function(dataset, fixpars) {
   all_areas_in_string <- map2(placements$x, placements$y, ~ area_string(top_placement = .x, left_placement = .y + 1)) %>%
     reduce(paste, sep = ", ")
   # make string of all placement areas for left-hand labels
-  left_labels_string <- map(1:7, ~ area_string(top_placement = .x, left_placement = 1))  %>%
+  left_labels_string <- map(1:max(placements), ~ area_string(top_placement = .x, left_placement = 1))  %>%
     reduce(paste, sep = ", ")
   # make string of all placement areas for left-hand labels
   last_row <- max(placements) + 1
@@ -447,14 +447,27 @@ contour_plot_patchwork <- function(dataset, fixpars) {
   
 }
 
-contour_plot_patchwork(dataset = data_set, fixpars = fixed_pars)
+count_occurences <- function(dat, column) {
+  dat %>%
+    group_by(!!parse_expr(column)) %>%
+    n_groups()
+}
+
+# get the list of all parameters
+parameter_list <- data_set %>%
+  colnames() %>%
+  str_subset(pattern = "_", negate = TRUE)
+# count the number of distinct values taken on by each parameter
+n_par_vals <- map(parameter_list, ~ count_occurences(dat = data_set, column = .x))
+# exclude parameters which have only one value (never change between simulations)
+changin_pars <- parameter_list[which(n_par_vals > 1)]
+# assign middle value to the parameters that take on different values in different simulations 
+par_set <- map_dfc(changin_pars, ~ find_middle_value(dat = data_set, colstr = .x))
+# make contour plot for each combination of changing parameter
+contour_plot_patchwork(dataset = data_set, fixpars = par_set)
 
 
-### DEBUG
-
-###
-
-#==== Contour plots ====
+#==== Contour plots (old stuff) ====
 # contour plot of mean values for each variable, according to different parameter values (user-defined)
 
 par_comb <- tibble(par = fitness_parameters) %>% 
