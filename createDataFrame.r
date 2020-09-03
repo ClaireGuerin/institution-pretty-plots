@@ -440,7 +440,7 @@ contour_plot_patchwork <- function(dataset, fixpars, variable) {
     map(~ wrap_elements(.x))
   
   # collect labels, graphs and legend as a list of ggplot items
-  all_graphs <- c(left_labels, save_graphs, bottom_labels, list(test_legend))
+  all_graphs <- c(left_labels, save_graphs, bottom_labels, list(global_legend))
   
   # prepare layout
   # NB: the labels and legend areas need to be automatized
@@ -462,6 +462,8 @@ count_occurences <- function(dat, column) {
     n_groups()
 }
 
+#==== Contour plot: EXAMPLE ====
+
 # get the list of all parameters
 parameter_list <- data_set %>%
   colnames() %>%
@@ -473,8 +475,23 @@ changin_pars <- parameter_list[which(n_par_vals > 1)]
 # assign middle value to the parameters that take on different values in different simulations 
 par_set <- map_dfc(changin_pars, ~ find_middle_value(dat = data_set, colstr = .x))
 # make contour plot for each combination of changing parameter
-contour_plot_patchwork(dataset = data_set, fixpars = par_set, variable = "resources_mean")
+res_plot <- contour_plot_patchwork(dataset = data_set, fixpars = par_set, variable = "resources_mean")
+demo_plot <- contour_plot_patchwork(dataset = data_set, fixpars = par_set, variable = "demography_mean")
+tech_plot <- contour_plot_patchwork(dataset = data_set, fixpars = par_set, variable = "technology_mean")
+phen_plot <- contour_plot_patchwork(dataset = data_set, fixpars = par_set, variable = "phenotype1_mean")
 
+ggsave(filename = "resources_techfunc.png", plot = res_plot, path = "/home/claire/Dropbox/PhD/Results/figs", width = 10, height = 5, units = "in")
+ggsave(filename = "technology_techfunc.png", plot = tech_plot, path = "/home/claire/Dropbox/PhD/Results/figs", width = 10, height = 5, units = "in")
+ggsave(filename = "demography_techfunc.png", plot = demo_plot, path = "/home/claire/Dropbox/PhD/Results/figs", width = 10, height = 5, units = "in")
+ggsave(filename = "phenotype1_techfunc.png", plot = phen_plot, path = "/home/claire/Dropbox/PhD/Results/figs", width = 10, height = 5, units = "in")
+
+par_combis <- tibble(par = colnames(par_set)) %>% 
+  expand(x = par, y = par) %>% 
+  filter(x < y)
+
+contour_parameter_pair(data_set, par_set, x_par = par_combis$x[1], y_par = par_combis$y[1], response_variable = "resources_mean", bounds = list("low" = 10, "high" = 110)) %>%
+  cowplot::get_legend() %>% 
+  wrap_elements()
 
 #==== example from GGally ====
 # Small function to display plots only if it's interactive
