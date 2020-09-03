@@ -389,7 +389,7 @@ get_response_variable_bounds <- function(dataset, responsevar) {
   return(list("low" = lower_bound, "high" = upper_bound))
 }
 
-contour_plot_patchwork <- function(dataset, fixpars) {
+contour_plot_patchwork <- function(dataset, fixpars, variable) {
   # get all parameter names 
   fitness_parameters <- names(fixpars)
   # make combinations (without repetitions) of all parameters
@@ -398,16 +398,15 @@ contour_plot_patchwork <- function(dataset, fixpars) {
     filter(x < y)
   
   # prepare each contour plot for each parameter combination
-  # NB: need to change response_variable so that it is an argument of the function
   ## set upper and lower limits of the response variable to uniformize throughout all graphs
-  boundaries <- get_response_variable_bounds(dataset = data_set, responsevar = "resources_mean")
+  boundaries <- get_response_variable_bounds(dataset = data_set, responsevar = variable)
   ## save all graphs in an object
-  save_graphs <- map2(par_comb$x, par_comb$y, ~ contour_parameter_pair(data_set, fixpars, x_par = .x, y_par = .y, response_variable = "resources_mean", bounds = boundaries) +
+  save_graphs <- map2(par_comb$x, par_comb$y, ~ contour_parameter_pair(data_set, fixpars, x_par = .x, y_par = .y, response_variable = variable, bounds = boundaries) +
                         theme(legend.position = "none"))
   
   # prepare global legend from dummy contour plot
   # NB: need to change response_variable so that it is an argument of the function
-  global_legend <- contour_parameter_pair(data_set, fixpars, x_par = par_comb$x[1], y_par = par_comb$y[1], response_variable = "resources_mean", bounds = boundaries)  %>%
+  global_legend <- contour_parameter_pair(data_set, fixpars, x_par = par_comb$x[1], y_par = par_comb$y[1], response_variable = variable, bounds = boundaries)  %>%
     cowplot::get_legend() %>% 
     wrap_elements()
   
@@ -474,54 +473,8 @@ changin_pars <- parameter_list[which(n_par_vals > 1)]
 # assign middle value to the parameters that take on different values in different simulations 
 par_set <- map_dfc(changin_pars, ~ find_middle_value(dat = data_set, colstr = .x))
 # make contour plot for each combination of changing parameter
-contour_plot_patchwork(dataset = data_set, fixpars = par_set)
+contour_plot_patchwork(dataset = data_set, fixpars = par_set, variable = "resources_mean")
 
-
-#==== Contour plots (old stuff) ====
-# contour plot of mean values for each variable, according to different parameter values (user-defined)
-
-par_comb <- tibble(par = fitness_parameters) %>% 
-  expand(x = par, y = par) %>% 
-  filter(x < y)
-
-par_order <- par_comb %>% count(x)
-slice(par_comb, par_order$x[which.max(par_order$n)])
-first_row <- 
-  par_comb[which(par_comb$x == par_order$x[which.max(par_order$n)]),]
-
-named_vector_aes <- first_row[1,] %>% 
-  bind_cols(z = "resources_mean")  %>%
-  pivot_longer(cols = c(x,y,z)) %>%
-  deframe()
-
-
-ggplot(data_set, aes(x = !!rlang::parse_expr(named_vector_aes["x"]), y = !!rlang::parse_expr(named_vector_aes["y"]), z = !!rlang::parse_expr(named_vector_aes["z"]))) + 
-  geom_contour_filled() +
-  theme_classic()
-
-ggplot(data_set, aes(x = atech, y = alphaResources, z = resources_mean)) + 
-  geom_contour_filled() +
-  theme_classic()
-
-npars <- as.numeric(tally(par_comb))
-1:floor(sqrt(npars)) %>% rev
-
-for(i in 1:floor(sqrt(npars))) {
-  print(c(i, as.numeric(npars) / i))
-}
-
-data_set %>%
-  select(-matches("_")) %>%
-  ggally_denstrip(mapping = aes(x = q, y = p, z = resources_mean))
-  
-ggpairs()
-ggplot(data_set, aes(x = q, y = p, z = resources_mean)) + 
-  geom_density_2d_filled(alpha = 0.5) +
-  theme_classic()
-
-ggplot(data_set, aes(x = q, y = p, z = resources_mean)) + 
-  geom_contour_filled() +
-  theme_classic()
 
 #==== example from GGally ====
 # Small function to display plots only if it's interactive
