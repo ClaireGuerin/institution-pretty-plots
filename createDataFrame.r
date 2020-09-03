@@ -246,7 +246,7 @@ collect_all_simulations_data <- function(path_to_all_dirs){
 
 #==== Get data from all simulations ====
 
-data_set <- collect_all_simulations_data("/home/claire/Desktop/technofirstbatch")
+data_set <- collect_all_simulations_data("/home/claire/Desktop/technotest")
 
 # Get sub-tibble for 2 varying pars, all others fixed
 
@@ -375,7 +375,7 @@ find_middle_value <- function(dat, colstr){
     filter(absval == min(absval)) %>%
     distinct()
   
-  return(middle_value[colstr])
+  return(middle_value[colstr][1,]) # take first row in case there are two values for which the absolute difference is minimal.
 }
 
 fixed_pars <- map_dfc(parameter_list, ~ find_middle_value(dat = data_set, colstr = .x))
