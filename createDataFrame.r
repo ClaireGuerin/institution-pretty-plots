@@ -332,7 +332,7 @@ data_plots <- data_set %>%
 #==== Contour Plots Patchworks by Variable ====
 # e.g. for p and q
 
-contour_parameter_pair <- function(dataset, filter_full_list, x_par, y_par, response_variable){
+contour_parameter_pair <- function(dataset, filter_full_list, x_par, y_par, response_variable, bounds){
   filter_list <- filter_full_list %>%
     select(-all_of(c(x_par, y_par)))
   dataset %>%
@@ -340,7 +340,7 @@ contour_parameter_pair <- function(dataset, filter_full_list, x_par, y_par, resp
     ggplot(aes(x = eval(parse_expr(x_par)), y = eval(parse_expr(y_par)), fill = eval(parse_expr(response_variable)))) +
     geom_tile() +
     # scale_fill_gradient(low = "#f7fbff", high = "#08306b") +
-    scale_fill_continuous(type = "viridis", limits = c(10, 110)) +
+    scale_fill_continuous(type = "viridis", limits = c(bounds$low, bounds$high)) +
     labs(x = NULL, y = NULL, fill = response_variable) +
     #theme(legend.position = "none") +
     theme_classic()
@@ -382,6 +382,13 @@ fixed_pars <- map_dfc(parameter_list, ~ find_middle_value(dat = data_set, colstr
 
 ## Automatize
 
+get_response_variable_bounds <- function(dataset, responsevar) {
+  lower_bound <- min(dataset[responsevar])
+  upper_bound <- max(dataset[responsevar])
+  
+  return(list("low" = lower_bound, "high" = upper_bound))
+}
+
 contour_plot_patchwork <- function(dataset, fixpars) {
   # get all parameter names 
   fitness_parameters <- names(fixpars)
@@ -392,12 +399,15 @@ contour_plot_patchwork <- function(dataset, fixpars) {
   
   # prepare each contour plot for each parameter combination
   # NB: need to change response_variable so that it is an argument of the function
-  save_graphs <- map2(par_comb$x, par_comb$y, ~ contour_parameter_pair(data_set, fixpars, x_par = .x, y_par = .y, response_variable = "resources_mean") +
+  ## set upper and lower limits of the response variable to uniformize throughout all graphs
+  boundaries <- get_response_variable_bounds(dataset = data_set, responsevar = "resources_mean")
+  ## save all graphs in an object
+  save_graphs <- map2(par_comb$x, par_comb$y, ~ contour_parameter_pair(data_set, fixpars, x_par = .x, y_par = .y, response_variable = "resources_mean", bounds = boundaries) +
                         theme(legend.position = "none"))
   
   # prepare global legend from dummy contour plot
   # NB: need to change response_variable so that it is an argument of the function
-  global_legend <- contour_parameter_pair(data_set, fixpars, x_par = par_comb$x[1], y_par = par_comb$y[1], response_variable = "resources_mean")  %>%
+  global_legend <- contour_parameter_pair(data_set, fixpars, x_par = par_comb$x[1], y_par = par_comb$y[1], response_variable = "resources_mean", bounds = boundaries)  %>%
     cowplot::get_legend() %>% 
     wrap_elements()
   
@@ -465,7 +475,6 @@ changin_pars <- parameter_list[which(n_par_vals > 1)]
 par_set <- map_dfc(changin_pars, ~ find_middle_value(dat = data_set, colstr = .x))
 # make contour plot for each combination of changing parameter
 contour_plot_patchwork(dataset = data_set, fixpars = par_set)
-
 
 
 #==== Contour plots (old stuff) ====
