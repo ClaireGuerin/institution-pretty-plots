@@ -467,6 +467,7 @@ par_set <- map_dfc(changin_pars, ~ find_middle_value(dat = data_set, colstr = .x
 contour_plot_patchwork(dataset = data_set, fixpars = par_set)
 
 
+
 #==== Contour plots (old stuff) ====
 # contour plot of mean values for each variable, according to different parameter values (user-defined)
 
