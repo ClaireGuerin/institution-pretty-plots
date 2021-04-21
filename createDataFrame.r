@@ -1,3 +1,5 @@
+rm(list = ls())
+
 library(tidyverse)
 library(fs)
 library(patchwork)
@@ -79,21 +81,24 @@ read_phenotype_data <- function(path2file, method = 3){
   
 }
 
-# Plots ====
+# Single simulation Plots ====
+
 plot_non_phen <- function(dat, var_name){
   var_average <- paste(var_name, "_mean", sep = "")
   var_variance <- paste(var_name, "_variance", sep = "")
-  p <- ggplot(dat) +
+  keep_data <- dat %>% 
+    select(generation, var_average, var_variance) %>%
+    mutate(var_deviation = sqrt(!!rlang::parse_expr(var_variance)))
+  p <- ggplot(keep_data) +
     geom_ribbon(mapping = aes(x = generation,
-                              ymin = !!rlang::parse_expr(var_average) - !!rlang::parse_expr(var_variance),
-                              ymax = !!rlang::parse_expr(var_average) + !!rlang::parse_expr(var_variance)),
+                              ymin = !!rlang::parse_expr(var_average) - var_deviation,
+                              ymax = !!rlang::parse_expr(var_average) + var_deviation),
                 colour = "gray") +
     geom_point(mapping = aes(x = generation, y = !!rlang::parse_expr(var_average)),
                colour = "seagreen3") +
     xlab("Time (number of generations)") +
     ylab(str_to_sentence(var_name)) +
     theme_classic()
-  
   return(p)
 }
 
@@ -246,7 +251,7 @@ collect_all_simulations_data <- function(path_to_all_dirs){
 
 #==== Get data from all simulations ====
 
-data_set <- collect_all_simulations_data("/home/claire/Desktop/technotest")
+data_set <- collect_all_simulations_data("/home/claire/Dropbox/PhD/Results/technotest")
 
 # Get sub-tibble for 2 varying pars, all others fixed
 
@@ -463,17 +468,30 @@ count_occurences <- function(dat, column) {
 }
 
 #==== Contour plot: EXAMPLE ====
+# collect the data
+#data_set <- collect_all_simulations_data("/home/claire/Dropbox/PhD/Data/Simulations/institutions/techpqalphares0-729")
+data_set <- collect_all_simulations_data("/home/claire/Dropbox/PhD/Data/Simulations/institutions/technology0-2500")
 
 # get the list of all parameters
 parameter_list <- data_set %>%
   colnames() %>%
   str_subset(pattern = "_", negate = TRUE)
+
 # count the number of distinct values taken on by each parameter
 n_par_vals <- map(parameter_list, ~ count_occurences(dat = data_set, column = .x))
+
 # exclude parameters which have only one value (never change between simulations)
 changin_pars <- parameter_list[which(n_par_vals > 1)]
-# assign middle value to the parameters that take on different values in different simulations 
+
+# assign specific  values to the parameters that take on different values in different simulations 
+distinct_par_vals <- map(parse_exprs(changin_pars), ~ distinct(.data = data_set, !!.x))
+
+# OR: assign middle value to the parameters that take on different values in different simulations 
 par_set <- map_dfc(changin_pars, ~ find_middle_value(dat = data_set, colstr = .x))
+
+### IF you want to check what values the changing parameters take on:
+map_dfc(changin_pars, ~ data_set %>% select(all_of(.x)) %>% distinct())
+
 # make contour plot for each combination of changing parameter
 res_plot <- contour_plot_patchwork(dataset = data_set, fixpars = par_set, variable = "resources_mean")
 demo_plot <- contour_plot_patchwork(dataset = data_set, fixpars = par_set, variable = "demography_mean")
@@ -524,8 +542,9 @@ data_summary <- bind_cols(var_name = variable_name[,1], m, v)
 
 
 # Example: single simulation ====
-my_dir = "/home/claire/Desktop/technofirstbatch/technology_alphaResources0.1betaTech0.1p0.1atech2.0btech1.0q0.1gamma0.01rb2.0"
+# my_dir = "/home/claire/Dropbox/PhD/Results/technotest/technology_alphaResources0.4betaTech0.7p0.6atech2.0btech1.0q0.7gamma0.01rb2.0"
 # setwd(my_dir)
+my_dir = "/home/claire/Desktop/institution-evolution/mysim"
 non_pheno_data <- read_non_phenotype_data(my_dir)
 pheno_data <- read_phenotype_data("out_phenotypes.txt")
 
@@ -541,10 +560,40 @@ plot_phenotype(pheno_data, 1)
   map(plot_phenotype_smooth, phen_dat = pheno_data) %>%
   wrap_plots()
 
-## Plot other variables
+pheno_data %>% filter(generation > 5000) %>% summarise(mean = mean(phenotype1_mean))
+
+## Plot other variables  
+plot_non_phen(non_pheno_data,"demography")
 c("consensus", "resources", "demography", "technology") %>% 
   map(plot_non_phen, dat = non_pheno_data) %>%
   wrap_plots()
+
+non_pheno_data %>% filter(generation > 5000) %>% summarise(mean = sqrt(mean(demography_variance)))
+
+#==== Plots for mid thesis ====
+ggplot(non_pheno_data) +
+  geom_ribbon(mapping = aes(x=generation,
+                            ymin=demography_mean-sqrt(demography_variance),
+                            ymax=demography_mean+sqrt(demography_variance)),
+              colour = "gray") +
+  geom_point(mapping=aes(x=generation,y=demography_mean), alpha=0.5) +
+  ylim(0,120) +
+  xlab("Time (number of generations)") +
+  ylab(bquote("Mean demography, " ~ bar("n"))) +
+  theme_classic()
+
+ggplot(pheno_data) +
+  geom_ribbon(mapping = aes(x=generation,
+                            ymin=phenotype1_mean-sqrt(phenotype1_variance),
+                            ymax=phenotype1_mean+sqrt(phenotype1_variance)),
+              colour = "gray") +
+  geom_point(mapping=aes(x=generation,y=phenotype1_mean), alpha=0.5) +
+  ylim(0,1) +
+  xlab("Time (number of generations)") +
+  ylab(bquote("Mean cooperation, " ~ bar("x"))) +
+  theme_classic()
+
+##############################################
 
 # Example: multiple simulations ====
 
